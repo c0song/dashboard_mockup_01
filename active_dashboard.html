@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>KDT Active Track Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        body { background-color: #f8fafc; font-family: 'Pretendard', sans-serif; }
+        .sidebar { width: 260px; background: #fff; border-right: 1px solid #d1d5db; height: 100vh; position: fixed; padding: 20px; z-index: 100; }
+        .main-content { margin-left: 260px; padding: 24px; }
+        .card { background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 20px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        .status-pill { padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+        .status-active { background: #dcfce7; color: #166534; }
+        .status-closed { background: #fee2e2; color: #991b1b; }
+        .filter-group { margin-bottom: 20px; }
+        .filter-label { font-size: 11px; font-weight: 700; color: #4a5568; text-transform: uppercase; margin-bottom: 6px; display: block; }
+        select { width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 13px; }
+    </style>
+</head>
+<body>
+
+<aside class="sidebar">
+    <div class="mb-8 font-bold text-xl text-[#00A699]">KDT Control Tower</div>
+    <div class="filter-group">
+        <label class="filter-label">Track Name</label>
+        <select id="track-select" onchange="selectedTrack = this.value; updateCharts()">
+            <option value="all" selected>전체</option>
+            <option value="fullstack">풀스택</option>
+            <option value="drive">자율주행</option>
+            <option value="unreal">언리얼</option>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label class="filter-label">Cohort (Global Filter)</label>
+        <select id="cohort-select" disabled>
+            <option value="all">전체</option>
+            <option value="1">1기</option>
+            <option value="2">2기</option>
+            <option value="3">3기</option>
+        </select>
+    </div>
+</aside>
+
+<main class="main-content">
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-800">⚡ 실시간 진행 트랙 모니터링</h1>
+        <p class="text-slate-500 mt-1">실시간 출석 및 활동 모니터링</p>
+    </div>
+
+    <div id="view-active">
+        <div class="grid grid-cols-12 gap-6 mb-6">
+            <div class="col-span-4 card h-[340px]">
+                <div class="flex items-baseline justify-between mb-3">
+                    <div>
+                        <h3 class="font-bold text-slate-700 text-sm">도메인 상태 (응답 속도 ms)</h3>
+                        <p class="text-[11px] text-slate-500">트랙 선택에 맞춰 게이지 표출</p>
+                    </div>
+                </div>
+                <div class="space-y-3 overflow-y-auto max-h-[260px] pr-1">
+                    <div id="gauge-fullstack-container" class="text-center bg-slate-50 rounded-lg p-2">
+                        <p class="text-[10px] text-blue-500 mb-1">https://fullstack.kdt-track.io</p>
+                        <div class="text-[11px] text-slate-600 mb-1">풀스택</div>
+                        <div id="gauge-fullstack" style="height: 140px;"></div>
+                    </div>
+                    <div id="gauge-drive-container" class="text-center bg-slate-50 rounded-lg p-2">
+                        <p class="text-[10px] text-blue-500 mb-1">https://selfdrive.kdt-track.io</p>
+                        <div class="text-[11px] text-slate-600 mb-1">자율주행</div>
+                        <div id="gauge-drive" style="height: 140px;"></div>
+                    </div>
+                    <div id="gauge-unreal-container" class="text-center bg-slate-50 rounded-lg p-2">
+                        <p class="text-[10px] text-blue-500 mb-1">https://unreal.kdt-track.io</p>
+                        <div class="text-[11px] text-slate-600 mb-1">언리얼</div>
+                        <div id="gauge-unreal" style="height: 140px;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-span-8 card h-[340px]">
+                <div class="flex justify-between items-center mb-2">
+                    <div>
+                        <h3 class="font-bold text-slate-700 text-sm">실시간 자리 이탈 패턴 (개별 수강생 산점도)</h3>
+                        <p class="text-[11px] text-slate-500">X축: 총 안면인식 시간(분), Y축: 자리 이탈 시간(분), 보조선: 평균 이탈 시간</p>
+                    </div>
+                    <select id="scatter-date-select" class="text-xs border rounded p-1" onchange="renderActiveView()">
+                        <option value="all" selected>전체</option>
+                    </select>
+                </div>
+                <div id="chart-seat-scatter" style="height: 260px;"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h3 class="font-bold text-slate-700">1분 단위 히트맵 캘린더 (평일 09시~23시)</h3>
+                    <p class="text-[11px] text-slate-500">2025-12-20 ~ 2026-01-10 기간 기준</p>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <span class="text-[11px] text-slate-500">날짜 선택</span>
+                    <select id="date-filter" class="text-xs border rounded px-2 py-1">
+                        <option value="all">전체</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-between items-center mb-4">
+                <div class="flex space-x-2">
+                    <span class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">인식됨</span>
+                    <span class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">이탈/미인식</span>
+                </div>
+            </div>
+            <div id="chart-face-log" style="height: 450px;"></div>
+        </div>
+    </div>
+</main>
+
+<script>
+    let selectedTrack = 'all';
+    let selectedDateFilter = 'all';
+    let selectedScatterDateFilter = 'all';
+
+    function updateCharts() {
+        document.getElementById('track-select').value = selectedTrack;
+        const latestCohort = { fullstack: '2기', drive: '2기', unreal: '1기' };
+        const cohortSelect = document.getElementById('cohort-select');
+        if (selectedTrack === 'all') {
+            cohortSelect.value = 'all';
+        } else {
+            cohortSelect.value = latestCohort[selectedTrack] || 'all';
+        }
+        renderActiveView();
+    }
+
+    function renderActiveView() {
+        const trackColorMap = {
+            fullstack: '#ff0000',
+            drive: '#00ff00',
+            unreal: '#ffbf00'
+        };
+
+        const renderGauge = (id, key, val, maxVal) => {
+            const el = document.getElementById(id);
+            echarts.dispose(el);
+            const g = echarts.init(el);
+            g.setOption({
+                series: [{ 
+                    type: 'gauge', 
+                    min: 0, 
+                    max: maxVal, 
+                    progress: { show: true, itemStyle: { color: '#ef4444' } }, 
+                    detail: { formatter: '{value}ms', fontSize: 13 },
+                    data: [{ value: val }], 
+                    axisLine: { lineStyle: { width: 10, color: [[1, '#e5e7eb']] } } 
+                }]
+            });
+            g.resize();
+        };
+        // 도메인 상태 게이지 표시 조건부
+        const showFullstack = selectedTrack === 'all' || selectedTrack === 'fullstack';
+        const showDrive = selectedTrack === 'all' || selectedTrack === 'drive';
+        const showUnreal = selectedTrack === 'all' || selectedTrack === 'unreal';
+        document.getElementById('gauge-fullstack-container').style.display = showFullstack ? 'block' : 'none';
+        document.getElementById('gauge-drive-container').style.display = showDrive ? 'block' : 'none';
+        document.getElementById('gauge-unreal-container').style.display = showUnreal ? 'block' : 'none';
+        // 도메인 응답 속도(ms) 예시 값
+        if (showFullstack) {
+            renderGauge('gauge-fullstack', 'fullstack', 85, 120);
+        }
+        if (showDrive) {
+            renderGauge('gauge-drive', 'drive', 95, 150);
+        }
+        if (showUnreal) {
+            renderGauge('gauge-unreal', 'unreal', 70, 110);
+        }
+
+        // [Chart 5] 히트맵 캘린더 (평일 09:00~23:00, 10분 단위)
+        const face = echarts.init(document.getElementById('chart-face-log'));
+        const studentCounts = {
+            all: 80,
+            fullstack: 15,
+            drive: 15,
+            unreal: 50
+        };
+        const totalStudents = studentCounts[selectedTrack] || 80;
+        // 날짜 (2025-12-20 ~ 2026-01-10, 최신 일자가 아래쪽에 오도록 오름차순 정렬)
+        const allDates = [];
+        const weekendIndexesAll = [];
+        const startDate = new Date('2025-12-20');
+        const endDate = new Date('2026-01-10');
+        let idx = 0;
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            allDates.push(`${month}/${day}`);
+            const dayOfWeek = d.getDay();
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                weekendIndexesAll.push(idx);
+            }
+            idx++;
+        }
+
+        // 날짜 필터 드롭다운 채우기 (최초 렌더링 시)
+        const dateFilterEl = document.getElementById('date-filter');
+        if (dateFilterEl && dateFilterEl.options.length === 1) {
+            allDates.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d;
+                dateFilterEl.appendChild(opt);
+            });
+            dateFilterEl.onchange = function () {
+                selectedDateFilter = this.value;
+                renderActiveView();
+            };
+        }
+
+        const dates = selectedDateFilter === 'all' ? allDates : allDates.filter(d => d === selectedDateFilter);
+        const weekendIndexes = dates.map((d, i) => {
+            const originalIdx = allDates.indexOf(d);
+            return weekendIndexesAll.includes(originalIdx) ? i : -1;
+        }).filter(i => i >= 0);
+        // 시간 슬롯: 09:00 ~ 23:00 (10분 단위, 6칸 per 시간)
+        const slots = [];
+        for (let h = 9; h <= 23; h++) {
+            for (let m = 0; m < 60; m += 10) {
+                slots.push(`${h}:${m.toString().padStart(2,'0')}`);
+            }
+        }
+        const data = [];
+        dates.forEach((date, y) => {
+            slots.forEach((slot, x) => {
+                let attend = Math.floor(Math.random() * (totalStudents + 1));
+                const hour = parseInt(slot.split(':')[0]);
+                // 09:00~09:50, 22:00~23:00, 주말 전체는 0명
+                if (
+                    weekendIndexes.includes(y) ||
+                    hour === 9 ||
+                    hour === 22 ||
+                    hour === 23
+                ) {
+                    attend = 0;
+                }
+                data.push([x, y, attend]);
+            });
+        });
+        face.setOption({
+            tooltip: { position: 'top', formatter: (p) => `${dates[p.data[1]]} ${slots[p.data[0]]}: ${p.data[2]}명 출석` },
+            grid: { top: 60, bottom: 80, left: 60, right: 80 },
+            dataZoom: [
+                { type: 'slider', xAxisIndex: 0, start: 0, end: 100, bottom: 20 },
+                { type: 'slider', yAxisIndex: 0, start: 0, end: 60, right: 40 }
+            ],
+            xAxis: { type: 'category', data: slots, position: 'bottom', axisLabel: { interval: 5, rotate: 45 } },
+            yAxis: { type: 'category', data: dates },
+            visualMap: { 
+                min: 0, 
+                max: totalStudents, 
+                inRange: { color: ['#b2182b', '#ef8a62', '#f7f7f7', '#67a9cf', '#2166ac'] },
+                show: true,
+                orient: 'vertical',
+                right: 10,
+                top: 'middle',
+                text: [`${totalStudents}명`, '0명']
+            },
+            series: [{ 
+                type: 'heatmap', 
+                data: data,
+                label: { show: false }
+            }]
+        });
+
+        // 산점도 날짜 필터 드롭다운 채우기
+        const scatterDateFilterEl = document.getElementById('scatter-date-select');
+        if (scatterDateFilterEl && scatterDateFilterEl.options.length === 1) {
+            allDates.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d;
+                scatterDateFilterEl.appendChild(opt);
+            });
+            scatterDateFilterEl.onchange = function () {
+                selectedScatterDateFilter = this.value;
+                renderActiveView();
+            };
+        }
+
+        // 자리 이탈 패턴 산점도
+        const scatterEl = document.getElementById('chart-seat-scatter');
+        echarts.dispose(scatterEl);
+        const scatter = echarts.init(scatterEl);
+
+        // 풀스택 트랙 학생 수: 2기 18명 + 3기 3명 = 21명
+        const fullstackStudents = [];
+        const fullstackCohorts = { '2기': 18, '3기': 3 };
+        const fullstackNames = [
+            '김민준', '이서준', '박도윤', '최하준', '정시우', '윤지호', '한서진',
+            '장예린', '조하은', '서지우', '오민서', '권서연', '임다은', '배하람',
+            '신지안', '양수호', '문현우', '류채원', '노유진', '설지민', '하도현'
+        ];
+        let nameIndex = 0;
+        Object.entries(fullstackCohorts).forEach(([cohortLabel, count]) => {
+            for (let i = 0; i < count; i++) {
+                const face = 300 + Math.round(Math.random() * 300); // 300~600분 사이
+                const leave = Math.round(face * (0.1 + Math.random() * 0.3)); // 10~40% 사이
+                fullstackStudents.push({
+                    name: fullstackNames[nameIndex % fullstackNames.length],
+                    cohort: cohortLabel,
+                    face,
+                    leave,
+                    track: '풀스택',
+                    key: 'fullstack'
+                });
+                nameIndex++;
+            }
+        });
+
+        // 이상치 케이스 추가 (풀스택 기준)
+        fullstackStudents.push(
+            // 1) 안면인식 거의 0, 이탈만 높은 학생
+            { name: '백이현', cohort: '2기', face: 5, leave: 300, track: '풀스택', key: 'fullstack' },
+            // 2) 안면인식·이탈 모두 높은 학생
+            { name: '송태윤', cohort: '2기', face: 700, leave: 500, track: '풀스택', key: 'fullstack' },
+            // 3) 이탈 시간 0인 학생
+            { name: '이채린', cohort: '3기', face: 650, leave: 0, track: '풀스택', key: 'fullstack' }
+        );
+
+        const studentDataMap = {
+            all: [
+                { name: '홍길동', cohort: '1기', face: 420, leave: 30, track: '풀스택', key: 'fullstack' },
+                { name: '김민수', cohort: '2기', face: 400, leave: 45, track: '풀스택', key: 'fullstack' },
+                { name: '이서연', cohort: '2기', face: 380, leave: 20, track: '풀스택', key: 'fullstack' },
+                { name: '박지훈', cohort: '3기', face: 350, leave: 60, track: '자율주행', key: 'drive' },
+                { name: '최유진', cohort: '3기', face: 390, leave: 25, track: '언리얼', key: 'unreal' }
+            ],
+            fullstack: fullstackStudents,
+            drive: [
+                { name: '박지훈', cohort: '2기', face: 360, leave: 55, track: '자율주행', key: 'drive' },
+                { name: '정도현', cohort: '2기', face: 345, leave: 50, track: '자율주행', key: 'drive' },
+                { name: '오하늘', cohort: '2기', face: 370, leave: 40, track: '자율주행', key: 'drive' }
+            ],
+            unreal: [
+                { name: '최유진', cohort: '1기', face: 390, leave: 20, track: '언리얼', key: 'unreal' },
+                { name: '장우진', cohort: '1기', face: 380, leave: 25, track: '언리얼', key: 'unreal' },
+                { name: '한세라', cohort: '1기', face: 400, leave: 18, track: '언리얼', key: 'unreal' }
+            ]
+        };
+        let scatterStudents = studentDataMap[selectedTrack] || studentDataMap.all;
+        
+        // 날짜 필터 적용: 선택한 날짜에 따라 학생 데이터를 날짜별로 변동시킴
+        if (selectedScatterDateFilter !== 'all') {
+            // 날짜를 시드로 사용하여 학생별 데이터 변동 시뮬레이션
+            scatterStudents = scatterStudents.map(s => {
+                const dateSeed = selectedScatterDateFilter.split('/').join('');
+                const nameSeed = s.name.charCodeAt(0) + s.name.charCodeAt(1);
+                const seed = parseInt(dateSeed) + nameSeed;
+                const rng = (seed) => {
+                    const x = Math.sin(seed) * 10000;
+                    return x - Math.floor(x);
+                };
+                // 기본값에서 ±20% 변동
+                const faceVariation = rng(seed) * 0.4 - 0.2; // -20% ~ +20%
+                const leaveVariation = rng(seed + 1000) * 0.4 - 0.2;
+                return {
+                    ...s,
+                    face: Math.max(0, Math.min(720, Math.round(s.face * (1 + faceVariation)))),
+                    leave: Math.max(0, Math.min(720, Math.round(s.leave * (1 + leaveVariation))))
+                };
+            });
+        }
+        
+        const scatterData = scatterStudents.map(s => ({
+            value: [s.face, s.leave],
+            name: s.name,
+            cohort: s.cohort,
+            track: s.track,
+            key: s.key,
+            itemStyle: { color: trackColorMap[s.key] || '#0ea5e9' }
+        }));
+        const lineMax = 720;
+        const ratio = 0.3;
+
+        scatter.setOption({
+            tooltip: {
+                trigger: 'item',
+                formatter: (p) => {
+                    const d = p.data;
+                    return `${d.name} (${d.track} ${d.cohort})<br/>총 안면인식: ${d.value[0]}분<br/>자리 이탈: ${d.value[1]}분`;
+                }
+            },
+            grid: { top: 40, bottom: 40, left: 60, right: 20 },
+            xAxis: {
+                type: 'value',
+                name: '총 안면인식 시간(분)',
+                nameLocation: 'middle',
+                nameGap: 30,
+                max: lineMax
+            },
+            yAxis: {
+                type: 'value',
+                name: '자리 이탈 시간(분)',
+                nameLocation: 'middle',
+                nameGap: 35,
+                max: lineMax
+            },
+            series: [{
+                type: 'scatter',
+                data: scatterData,
+                symbolSize: val => 8,
+                itemStyle: {
+                    color: params => (params.data && params.data.itemStyle && params.data.itemStyle.color) || '#0ea5e9'
+                },
+                markLine: {
+                    symbol: 'none',
+                    lineStyle: { type: 'dashed', color: '#000000' },
+                    label: { formatter: '이탈 {d|30%} 선', rich: { d: { fontWeight: 'bold' } } },
+                    data: [[
+                        { coord: [0, 0] },
+                        { coord: [lineMax, lineMax * ratio] }
+                    ]]
+                }
+            }]
+        });
+    }
+
+    document.getElementById('current-time').innerText = new Date().toLocaleString();
+    updateCharts();
+</script>
+</body>
+</html>
